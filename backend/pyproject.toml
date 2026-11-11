@@ -8,7 +8,7 @@ dependencies = [
     "fastapi>=0.162.4",
     "openpyxl>=3.1.5",
     "passlib[argon2]>=1.7.4",
-    "pydantic>=2",
+    "pydantic[email]>=2",
     "pydantic-settings>=2.16.2",
     "pyjwt>=2.15.1",
     "pymysql>=1.2.4",
@@ -32,6 +32,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+# FastAPI's Depends()/Query()/Cookie() are meant to be called as defaults.
+ignore = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"
