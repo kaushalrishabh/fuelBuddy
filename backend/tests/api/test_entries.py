@@ -22,10 +22,16 @@ def test_create_refuel_computes_price_per_litre(
         },
     )
     assert response.status_code == 201
-    body = response.json()
-    assert Decimal(body["price_per_litre"]) == Decimal("80.00")
-    assert body["fill_type"] == "full"
-    assert body["odometer_status"] == "ok"
+    entry = response.json()["entry"]
+    assert Decimal(entry["price_per_litre"]) == Decimal("80.00")
+    assert entry["fill_type"] == "full"
+    assert entry["odometer_status"] == "ok"
+    assert response.json()["warnings"] == []
+    assert response.json()["preview"] == {
+        "distance_since_last_full_km": None,
+        "km_per_l": None,
+        "rs_per_km": None,
+    }
 
 
 def test_create_refuel_computes_amount_from_price(
@@ -42,7 +48,7 @@ def test_create_refuel_computes_amount_from_price(
         },
     )
     assert response.status_code == 201
-    assert Decimal(response.json()["amount_rs"]) == Decimal("905.00")
+    assert Decimal(response.json()["entry"]["amount_rs"]) == Decimal("905.00")
 
 
 def test_create_refuel_without_amount_or_price_rejected(
@@ -68,7 +74,9 @@ def test_create_fuel_removed_requires_notes(auth_client: TestClient, test_vehicl
     assert response.status_code == 422
 
 
-def test_create_fuel_removed_entry(auth_client: TestClient, test_vehicle: Vehicle) -> None:
+def test_create_fuel_removed_entry_has_no_warnings_or_preview(
+    auth_client: TestClient, test_vehicle: Vehicle
+) -> None:
     response = auth_client.post(
         f"/api/vehicles/{test_vehicle.id}/entries",
         json={
@@ -80,9 +88,11 @@ def test_create_fuel_removed_entry(auth_client: TestClient, test_vehicle: Vehicl
     )
     assert response.status_code == 201
     body = response.json()
-    assert body["entry_type"] == "fuel_removed"
-    assert body["odometer_km"] is None
-    assert body["amount_rs"] is None
+    assert body["entry"]["entry_type"] == "fuel_removed"
+    assert body["entry"]["odometer_km"] is None
+    assert body["entry"]["amount_rs"] is None
+    assert body["warnings"] == []
+    assert body["preview"] is None
 
 
 def test_duplicate_refuel_entry_is_rejected(auth_client: TestClient, test_vehicle: Vehicle) -> None:
@@ -144,14 +154,14 @@ def test_update_entry_writes_audit_record(
             "amount_rs": "1000.00",
         },
     )
-    entry_id = create_response.json()["id"]
+    entry_id = create_response.json()["entry"]["id"]
 
     update_response = auth_client.patch(
         f"/api/vehicles/{test_vehicle.id}/entries/{entry_id}",
         json={"odometer_status": "faulty", "notes": "Speedo was acting up"},
     )
     assert update_response.status_code == 200
-    assert update_response.json()["odometer_status"] == "faulty"
+    assert update_response.json()["entry"]["odometer_status"] == "faulty"
 
     audit_rows = db_session.query(EntryAudit).filter(EntryAudit.fuel_entry_id == entry_id).all()
     assert len(audit_rows) == 1
@@ -172,7 +182,7 @@ def test_update_entry_with_no_changes_skips_audit(
             "amount_rs": "1000.00",
         },
     )
-    entry_id = create_response.json()["id"]
+    entry_id = create_response.json()["entry"]["id"]
 
     auth_client.patch(f"/api/vehicles/{test_vehicle.id}/entries/{entry_id}", json={})
 
@@ -186,3 +196,116 @@ def test_entries_require_auth(client: TestClient, test_vehicle: Vehicle) -> None
 
 def test_entries_scoped_to_vehicle_owner(auth_client: TestClient) -> None:
     assert auth_client.get("/api/vehicles/999999/entries").status_code == 404
+
+
+# --- warnings + preview wiring (mileage engine integration) -----------------
+
+
+def test_second_full_fill_gets_distance_and_mileage_preview(
+    auth_client: TestClient, test_vehicle: Vehicle
+) -> None:
+    auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-01",
+            "odometer_km": "1000.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    response = auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-15",
+            "odometer_km": "1500.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    assert response.status_code == 201
+    preview = response.json()["preview"]
+    assert Decimal(preview["distance_since_last_full_km"]) == Decimal("500.0")
+    assert Decimal(preview["km_per_l"]) == Decimal("50.0")
+    assert Decimal(preview["rs_per_km"]) == Decimal("1.8")
+    assert response.json()["warnings"] == []
+
+
+def test_odometer_decrease_produces_warning_with_fix_actions(
+    auth_client: TestClient, test_vehicle: Vehicle
+) -> None:
+    auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-01",
+            "odometer_km": "1000.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    response = auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-10",
+            "odometer_km": "900.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    assert response.status_code == 201  # never blocked
+
+    warnings = response.json()["warnings"]
+    warning = next(w for w in warnings if w["code"] == "odometer_decreased")
+    actions = {fix["action"] for fix in warning["suggested_fixes"]}
+    assert actions == {"mark_faulty", "log_odometer_event", "set_distance_override"}
+
+
+def test_price_out_of_range_produces_warning(
+    auth_client: TestClient, test_vehicle: Vehicle
+) -> None:
+    response = auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-01",
+            "odometer_km": "1000.0",
+            "litres": "10.00",
+            "price_per_litre": "250.00",
+        },
+    )
+    assert response.status_code == 201
+    assert any(w["code"] == "price_out_of_range" for w in response.json()["warnings"])
+
+
+def test_update_entry_recomputes_warnings(auth_client: TestClient, test_vehicle: Vehicle) -> None:
+    auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-01",
+            "odometer_km": "1000.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    create_response = auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-10",
+            "odometer_km": "1200.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    assert create_response.json()["warnings"] == []
+    entry_id = create_response.json()["entry"]["id"]
+
+    update_response = auth_client.patch(
+        f"/api/vehicles/{test_vehicle.id}/entries/{entry_id}",
+        json={"odometer_km": "900.0"},
+    )
+    assert any(w["code"] == "odometer_decreased" for w in update_response.json()["warnings"])

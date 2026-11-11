@@ -12,7 +12,15 @@ from app.models.enums import EntryType, OdometerStatus
 from app.models.fuel_entry import FuelEntry
 from app.models.user import User
 from app.models.vehicle import Vehicle
-from app.schemas.fuel_entry import EntryCreate, EntryListResponse, EntryRead, EntryUpdate
+from app.schemas.fuel_entry import (
+    EntryCreate,
+    EntryListResponse,
+    EntryRead,
+    EntrySaveResponse,
+    EntryUpdate,
+    ValidationWarningOut,
+)
+from app.services.entry_feedback import build_refuel_feedback
 
 router = APIRouter()
 
@@ -41,6 +49,19 @@ def _get_owned_entry(db: Session, vehicle_id: int, entry_id: int) -> FuelEntry:
     if entry is None or entry.vehicle_id != vehicle_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Entry not found")
     return entry
+
+
+def _build_save_response(db: Session, vehicle: Vehicle, entry: FuelEntry) -> EntrySaveResponse:
+    entry_read = EntryRead.model_validate(entry)
+    if entry.entry_type != EntryType.REFUEL:
+        return EntrySaveResponse(entry=entry_read)
+
+    warnings, preview = build_refuel_feedback(db, vehicle, entry)
+    return EntrySaveResponse(
+        entry=entry_read,
+        warnings=[ValidationWarningOut.model_validate(w) for w in warnings],
+        preview=preview,
+    )
 
 
 @router.get("", response_model=EntryListResponse)
@@ -93,14 +114,14 @@ def get_entry(
     return _get_owned_entry(db, vehicle_id, entry_id)
 
 
-@router.post("", response_model=EntryRead, status_code=201)
+@router.post("", response_model=EntrySaveResponse, status_code=201)
 def create_entry(
     vehicle_id: int,
     payload: EntryCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> FuelEntry:
-    _get_owned_vehicle(db, vehicle_id, current_user)
+) -> EntrySaveResponse:
+    vehicle = _get_owned_vehicle(db, vehicle_id, current_user)
 
     data = payload.model_dump()
     data["entry_type"] = EntryType(data["entry_type"])
@@ -115,23 +136,23 @@ def create_entry(
             "An entry already exists for this vehicle, date, and odometer reading",
         ) from exc
     db.refresh(entry)
-    return entry
+    return _build_save_response(db, vehicle, entry)
 
 
-@router.patch("/{entry_id}", response_model=EntryRead)
+@router.patch("/{entry_id}", response_model=EntrySaveResponse)
 def update_entry(
     vehicle_id: int,
     entry_id: int,
     payload: EntryUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> FuelEntry:
-    _get_owned_vehicle(db, vehicle_id, current_user)
+) -> EntrySaveResponse:
+    vehicle = _get_owned_vehicle(db, vehicle_id, current_user)
     entry = _get_owned_entry(db, vehicle_id, entry_id)
 
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
-        return entry
+        return _build_save_response(db, vehicle, entry)
 
     old_values = EntryRead.model_validate(entry).model_dump(mode="json")
     for field, value in changes.items():
@@ -149,4 +170,4 @@ def update_entry(
     )
     db.commit()
     db.refresh(entry)
-    return entry
+    return _build_save_response(db, vehicle, entry)

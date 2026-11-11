@@ -1,6 +1,6 @@
 import datetime as dt
 from decimal import Decimal
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -90,3 +90,31 @@ class EntryListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class SuggestedFixOut(BaseModel):
+    action: str
+    label: str
+    prefill: dict[str, Any] | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ValidationWarningOut(BaseModel):
+    code: str
+    message: str
+    suggested_fixes: list[SuggestedFixOut] = []
+
+    model_config = {"from_attributes": True}
+
+
+class FillPreview(BaseModel):
+    distance_since_last_full_km: Decimal | None
+    km_per_l: Decimal | None
+    rs_per_km: Decimal | None
+
+
+class EntrySaveResponse(BaseModel):
+    entry: EntryRead
+    warnings: list[ValidationWarningOut] = []
+    preview: FillPreview | None = None
