@@ -118,3 +118,8 @@ class EntrySaveResponse(BaseModel):
     entry: EntryRead
     warnings: list[ValidationWarningOut] = []
     preview: FillPreview | None = None
+
+
+class EntryPreviewResponse(BaseModel):
+    warnings: list[ValidationWarningOut] = []
+    preview: FillPreview | None = None

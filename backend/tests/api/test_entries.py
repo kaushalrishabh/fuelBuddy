@@ -309,3 +309,79 @@ def test_update_entry_recomputes_warnings(auth_client: TestClient, test_vehicle:
         json={"odometer_km": "900.0"},
     )
     assert any(w["code"] == "odometer_decreased" for w in update_response.json()["warnings"])
+
+
+def test_preview_does_not_persist_anything(auth_client: TestClient, test_vehicle: Vehicle) -> None:
+    auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-01",
+            "odometer_km": "1000.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+
+    response = auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries/preview",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-15",
+            "odometer_km": "1500.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(body["preview"]["distance_since_last_full_km"]) == Decimal("500.0")
+    assert Decimal(body["preview"]["km_per_l"]) == Decimal("50.0")
+    assert body["warnings"] == []
+
+    entries = auth_client.get(f"/api/vehicles/{test_vehicle.id}/entries").json()
+    assert entries["total"] == 1  # the previewed entry was never saved
+
+
+def test_preview_surfaces_odometer_decreased_warning(
+    auth_client: TestClient, test_vehicle: Vehicle
+) -> None:
+    auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-01",
+            "odometer_km": "1000.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    response = auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries/preview",
+        json={
+            "entry_type": "refuel",
+            "date": "2026-01-10",
+            "odometer_km": "900.0",
+            "litres": "10.00",
+            "amount_rs": "900.00",
+        },
+    )
+    assert any(w["code"] == "odometer_decreased" for w in response.json()["warnings"])
+
+
+def test_preview_of_fuel_removed_has_no_preview_or_warnings(
+    auth_client: TestClient, test_vehicle: Vehicle
+) -> None:
+    response = auth_client.post(
+        f"/api/vehicles/{test_vehicle.id}/entries/preview",
+        json={
+            "entry_type": "fuel_removed",
+            "date": "2026-01-01",
+            "litres": "2.00",
+            "notes": "testing",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["warnings"] == []
+    assert body["preview"] is None

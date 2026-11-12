@@ -15,6 +15,7 @@ from app.models.vehicle import Vehicle
 from app.schemas.fuel_entry import (
     EntryCreate,
     EntryListResponse,
+    EntryPreviewResponse,
     EntryRead,
     EntrySaveResponse,
     EntryUpdate,
@@ -137,6 +138,36 @@ def create_entry(
         ) from exc
     db.refresh(entry)
     return _build_save_response(db, vehicle, entry)
+
+
+@router.post("/preview", response_model=EntryPreviewResponse)
+def preview_entry(
+    vehicle_id: int,
+    payload: EntryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EntryPreviewResponse:
+    """Same validation/preview math as create_entry, without writing anything.
+
+    Powers the Home form's "before you save" preview. The transient entry
+    below is never added to the session, so it never hits the DB; id=0 is
+    just a sentinel since the mileage dataclasses require an int id.
+    """
+    vehicle = _get_owned_vehicle(db, vehicle_id, current_user)
+
+    data = payload.model_dump()
+    data["entry_type"] = EntryType(data["entry_type"])
+    transient_entry = FuelEntry(vehicle_id=vehicle_id, **data)
+    transient_entry.id = 0
+
+    if transient_entry.entry_type != EntryType.REFUEL:
+        return EntryPreviewResponse()
+
+    warnings, preview = build_refuel_feedback(db, vehicle, transient_entry)
+    return EntryPreviewResponse(
+        warnings=[ValidationWarningOut.model_validate(w) for w in warnings],
+        preview=preview,
+    )
 
 
 @router.patch("/{entry_id}", response_model=EntrySaveResponse)
