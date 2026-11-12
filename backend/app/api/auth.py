@@ -10,7 +10,13 @@ from app.core.email import send_password_reset_email
 from app.core.rate_limit import check_rate_limit, record_attempt
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
-from app.schemas.auth import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, UserRead
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResetPasswordRequest,
+    UserRead,
+)
 from app.services.password_reset import consume_reset_token, create_reset_token
 
 router = APIRouter()
@@ -77,4 +83,17 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     new_hash = hash_password(payload.new_password)
     if not consume_reset_token(db, payload.token, new_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired reset token")
+    return {"status": "ok"}
+
+
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
     return {"status": "ok"}

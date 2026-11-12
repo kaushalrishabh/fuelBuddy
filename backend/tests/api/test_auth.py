@@ -59,3 +59,34 @@ def test_mutating_request_without_csrf_header_is_rejected(
         "/api/auth/login", json={"email": test_user.email, "password": TEST_PASSWORD}
     )
     assert response.status_code == 403
+
+
+def test_change_password_requires_auth(client: TestClient) -> None:
+    response = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "whatever", "new_password": "new-password-123"},
+    )
+    assert response.status_code == 401
+
+
+def test_change_password_rejects_wrong_current_password(auth_client: TestClient) -> None:
+    response = auth_client.post(
+        "/api/auth/change-password",
+        json={"current_password": "wrong", "new_password": "new-password-123"},
+    )
+    assert response.status_code == 401
+
+
+def test_change_password_success_then_login_with_new_password(
+    auth_client: TestClient, test_user: User
+) -> None:
+    response = auth_client.post(
+        "/api/auth/change-password",
+        json={"current_password": TEST_PASSWORD, "new_password": "new-password-123"},
+    )
+    assert response.status_code == 200
+
+    login_response = auth_client.post(
+        "/api/auth/login", json={"email": test_user.email, "password": "new-password-123"}
+    )
+    assert login_response.status_code == 200
