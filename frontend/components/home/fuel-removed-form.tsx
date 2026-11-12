@@ -42,7 +42,9 @@ export function FuelRemovedForm({ vehicleId }: { vehicleId: number | undefined }
       {
         onSuccess: () => {
           toast.success("Fuel removal logged");
-          reset({ date: todayIso() });
+          // Explicitly clear every field -- reset() only touches the ones
+          // listed, leaving the rest at their just-submitted values.
+          reset({ date: todayIso(), litres: "", odometer_km: "", notes: "" });
         },
         onError: () => toast.error("Couldn't save this entry"),
       },

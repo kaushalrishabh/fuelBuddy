@@ -12,7 +12,13 @@ import { OdometerEventDialog } from "@/components/odometer-event-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { todayIso } from "@/lib/format";
 import { usePlaceSuggestions } from "@/lib/hooks/use-place-suggestions";
@@ -49,9 +55,10 @@ export function RefuelForm({ vehicleId }: { vehicleId: number | undefined }) {
   const [distanceOverride, setDistanceOverride] = useState("");
   const [showOverrideField, setShowOverrideField] = useState(false);
   const [odometerDialogOpen, setOdometerDialogOpen] = useState(false);
-  const [odometerDialogPrefill, setOdometerDialogPrefill] = useState<Record<string, string> | null>(
-    null,
-  );
+  const [odometerDialogPrefill, setOdometerDialogPrefill] = useState<Record<
+    string,
+    string
+  > | null>(null);
 
   const {
     register,
@@ -87,12 +94,23 @@ export function RefuelForm({ vehicleId }: { vehicleId: number | undefined }) {
   }, [lastEdited, litres, price, setValue]);
 
   const debouncedKey = useDebouncedValue(
-    JSON.stringify([date, odometerKm, litres, amount, price, fillType, odometerStatus, distanceOverride]),
+    JSON.stringify([
+      date,
+      odometerKm,
+      litres,
+      amount,
+      price,
+      fillType,
+      odometerStatus,
+      distanceOverride,
+    ]),
     500,
   );
 
   useEffect(() => {
-    const [d, o, l, a, p, f, status, override] = JSON.parse(debouncedKey) as string[];
+    const [d, o, l, a, p, f, status, override] = JSON.parse(
+      debouncedKey,
+    ) as string[];
     if (!d || !o || !l || (!a && !p)) return;
     previewEntry.mutate({
       entry_type: "refuel",
@@ -140,13 +158,30 @@ export function RefuelForm({ vehicleId }: { vehicleId: number | undefined }) {
         onSuccess: (response) => {
           toast.success("Refuel saved");
           if (response.warnings.length > 0) {
-            toast.warning(`${response.warnings.length} warning(s) on this entry — check Data to fix`);
+            toast.warning(
+              `${response.warnings.length} warning(s) on this entry — check Data to fix`,
+            );
           }
-          reset({ date: todayIso(), fill_type: "full" });
+          // RHF's reset() only clears fields explicitly listed here -- any
+          // field left out keeps its just-submitted value, which previously
+          // caused a bogus preview (today's date against the just-saved
+          // odometer reading -> a nonsensical 0km/0km/L result).
+          reset({
+            date: todayIso(),
+            odometer_km: "",
+            litres: "",
+            amount_rs: "",
+            price_per_litre: "",
+            fill_type: "full",
+            location: "",
+            station_name: "",
+            notes: "",
+          });
           setOdometerStatus("ok");
           setDistanceOverride("");
           setShowOverrideField(false);
           setLastEdited(null);
+          previewEntry.reset();
         },
         onError: () => toast.error("Couldn't save this entry"),
       },
@@ -154,126 +189,176 @@ export function RefuelForm({ vehicleId }: { vehicleId: number | undefined }) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="date">Date</Label>
-          <Input id="date" type="date" {...register("date")} />
-          {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
+    // OdometerEventDialog renders its own <form> in a portal; even though
+    // it's a sibling here (not nested in the <form> below), see the note
+    // by that component's render for why nesting it inside would double-
+    // submit this outer form (React bubbles a portaled form's submit
+    // through the React tree, not just the DOM tree).
+    <>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="date">Date</Label>
+            <Input id="date" type="date" {...register("date")} />
+            {errors.date && (
+              <p className="text-sm text-destructive">{errors.date.message}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="odometer_km">Odometer (km)</Label>
+            <Input
+              id="odometer_km"
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              {...register("odometer_km")}
+            />
+            {errors.odometer_km && (
+              <p className="text-sm text-destructive">
+                {errors.odometer_km.message}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="odometer_km">Odometer (km)</Label>
-          <Input
-            id="odometer_km"
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            {...register("odometer_km")}
-          />
-          {errors.odometer_km && (
-            <p className="text-sm text-destructive">{errors.odometer_km.message}</p>
-          )}
-        </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="litres">Litres</Label>
-          <Input id="litres" type="number" inputMode="decimal" step="0.01" {...register("litres")} />
-          {errors.litres && <p className="text-sm text-destructive">{errors.litres.message}</p>}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="litres">Litres</Label>
+            <Input
+              id="litres"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              {...register("litres")}
+            />
+            {errors.litres && (
+              <p className="text-sm text-destructive">
+                {errors.litres.message}
+              </p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Fill type</Label>
+            <Select
+              value={fillType}
+              onValueChange={(value) =>
+                setValue("fill_type", value as "full" | "partial")
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full">Full tank</SelectItem>
+                <SelectItem value="partial">Partial</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label>Fill type</Label>
-          <Select value={fillType} onValueChange={(value) => setValue("fill_type", value as "full" | "partial")}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="full">Full tank</SelectItem>
-              <SelectItem value="partial">Partial</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="amount_rs">Amount (₹)</Label>
-          <Input
-            id="amount_rs"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            {...register("amount_rs", { onChange: () => setLastEdited("amount") })}
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="amount_rs">Amount (₹)</Label>
+            <Input
+              id="amount_rs"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              {...register("amount_rs", {
+                onChange: () => setLastEdited("amount"),
+              })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="price_per_litre">Price/L (₹)</Label>
+            <Input
+              id="price_per_litre"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              {...register("price_per_litre", {
+                onChange: () => setLastEdited("price"),
+              })}
+            />
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="price_per_litre">Price/L (₹)</Label>
-          <Input
-            id="price_per_litre"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            {...register("price_per_litre", { onChange: () => setLastEdited("price") })}
-          />
+        {errors.amount_rs && (
+          <p className="text-sm text-destructive">{errors.amount_rs.message}</p>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="location">Location</Label>
+            <Input
+              id="location"
+              list="location-suggestions"
+              {...register("location")}
+            />
+            <datalist id="location-suggestions">
+              {locations.map((loc) => (
+                <option key={loc} value={loc} />
+              ))}
+            </datalist>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="station_name">Station (optional)</Label>
+            <Input
+              id="station_name"
+              list="station-suggestions"
+              {...register("station_name")}
+            />
+            <datalist id="station-suggestions">
+              {stations.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          </div>
         </div>
-      </div>
-      {errors.amount_rs && <p className="text-sm text-destructive">{errors.amount_rs.message}</p>}
 
-      <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="location">Location</Label>
-          <Input id="location" list="location-suggestions" {...register("location")} />
-          <datalist id="location-suggestions">
-            {locations.map((loc) => (
-              <option key={loc} value={loc} />
-            ))}
-          </datalist>
+          <Label htmlFor="notes">Notes</Label>
+          <Textarea id="notes" rows={2} {...register("notes")} />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="station_name">Station (optional)</Label>
-          <Input id="station_name" list="station-suggestions" {...register("station_name")} />
-          <datalist id="station-suggestions">
-            {stations.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
-        </div>
-      </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="notes">Notes</Label>
-        <Textarea id="notes" rows={2} {...register("notes")} />
-      </div>
+        {showOverrideField && (
+          <div className="space-y-1.5">
+            <Label htmlFor="distance_override">
+              Actual distance for this fill (km)
+            </Label>
+            <Input
+              id="distance_override"
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              value={distanceOverride}
+              onChange={(e) => setDistanceOverride(e.target.value)}
+            />
+          </div>
+        )}
 
-      {showOverrideField && (
-        <div className="space-y-1.5">
-          <Label htmlFor="distance_override">Actual distance for this fill (km)</Label>
-          <Input
-            id="distance_override"
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            value={distanceOverride}
-            onChange={(e) => setDistanceOverride(e.target.value)}
-          />
-        </div>
-      )}
+        <EntryWarnings
+          warnings={previewEntry.data?.warnings ?? []}
+          onFix={handleFix}
+        />
+        <FillPreviewCard preview={previewEntry.data?.preview} />
 
-      <EntryWarnings warnings={previewEntry.data?.warnings ?? []} onFix={handleFix} />
-      <FillPreviewCard preview={previewEntry.data?.preview} />
-
-      <Button type="submit" className="w-full" disabled={createEntry.isPending}>
-        {createEntry.isPending ? "Saving…" : "Save refuel"}
-      </Button>
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={createEntry.isPending}
+        >
+          {createEntry.isPending ? "Saving…" : "Save refuel"}
+        </Button>
+      </form>
 
       <OdometerEventDialog
+        key={JSON.stringify(odometerDialogPrefill)}
         vehicleId={vehicleId}
         open={odometerDialogOpen}
         onOpenChange={setOdometerDialogOpen}
         prefill={odometerDialogPrefill}
         onLogged={() => previewEntry.reset()}
       />
-    </form>
+    </>
   );
 }

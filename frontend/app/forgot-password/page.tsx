@@ -34,7 +34,7 @@ export default function ForgotPasswordPage() {
         <CardContent>
           {forgotPassword.isSuccess ? (
             <p className="text-center text-sm text-muted-foreground">
-              If that email is registered, a reset link is on its way. It's valid for 1 hour.
+              If that email is registered, a reset link is on its way. It&apos;s valid for 1 hour.
             </p>
           ) : (
             <form

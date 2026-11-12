@@ -20,6 +20,8 @@ frontend/.next/
 frontend/out/
 frontend/*.tsbuildinfo
 frontend/next-env.d.ts
+# Re-written by `next dev` itself every run; we use CLAUDE.md instead.
+frontend/AGENTS.md
 npm-debug.log*
 
 # OS

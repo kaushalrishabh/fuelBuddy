@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -30,21 +30,23 @@ export function OdometerEventDialog({
   onLogged: () => void;
 }) {
   const createEvent = useCreateOdometerEvent(vehicleId);
-  const [startDate, setStartDate] = useState("");
-  const [oldReading, setOldReading] = useState("");
-  const [newReading, setNewReading] = useState("");
+  // Lazy-initialized from `prefill`; the caller remounts this component with
+  // a key derived from prefill whenever a new warning's fix is clicked, so
+  // these reset correctly without syncing via an effect.
+  const [startDate, setStartDate] = useState(prefill?.start_date ?? "");
+  const [oldReading, setOldReading] = useState(prefill?.old_reading_at_change ?? "");
+  const [newReading, setNewReading] = useState(prefill?.new_reading_at_change ?? "");
   const [notes, setNotes] = useState("");
-
-  useEffect(() => {
-    if (prefill) {
-      setStartDate(prefill.start_date ?? "");
-      setOldReading(prefill.old_reading_at_change ?? "");
-      setNewReading(prefill.new_reading_at_change ?? "");
-    }
-  }, [prefill]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // This form renders in a Dialog portal. React bubbles a portaled
+    // form's submit through the *React* component tree, not just the DOM
+    // tree, so without this an ancestor <form> (e.g. the Home page's
+    // RefuelForm, if this dialog is ever rendered inside one again) would
+    // also submit. Belt-and-suspenders alongside keeping this dialog a
+    // sibling of any such form, not a descendant.
+    e.stopPropagation();
     createEvent.mutate(
       {
         event_type: "replaced",
@@ -87,7 +89,7 @@ export function OdometerEventDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="old-reading">Old meter's last reading</Label>
+              <Label htmlFor="old-reading">Old meter&apos;s last reading</Label>
               <Input
                 id="old-reading"
                 type="number"
@@ -99,7 +101,7 @@ export function OdometerEventDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-reading">New meter's reading now</Label>
+              <Label htmlFor="new-reading">New meter&apos;s reading now</Label>
               <Input
                 id="new-reading"
                 type="number"

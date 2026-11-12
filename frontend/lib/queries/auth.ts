@@ -46,3 +46,10 @@ export function useResetPassword() {
       api.post("/api/auth/reset-password", payload),
   });
 }
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (payload: { current_password: string; new_password: string }) =>
+      api.post("/api/auth/change-password", payload),
+  });
+}
