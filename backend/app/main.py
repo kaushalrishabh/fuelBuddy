@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.entries import router as entries_router
+from app.api.export import router as export_router
 from app.api.health import router as health_router
+from app.api.imports import router as imports_router
 from app.api.odometer_events import router as odometer_events_router
 from app.api.vehicles import router as vehicles_router
 from app.core.config import get_settings
@@ -53,3 +55,5 @@ app.include_router(
     prefix="/api/vehicles/{vehicle_id}/odometer-events",
     tags=["odometer-events"],
 )
+app.include_router(imports_router, prefix="/api/vehicles/{vehicle_id}/import", tags=["import"])
+app.include_router(export_router, prefix="/api/vehicles/{vehicle_id}", tags=["export"])
