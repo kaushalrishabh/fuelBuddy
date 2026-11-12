@@ -9,7 +9,6 @@ are computed.
 
 import datetime as dt
 from collections.abc import Sequence
-from dataclasses import dataclass
 from decimal import Decimal
 
 from openpyxl import Workbook
@@ -18,13 +17,14 @@ from app.models.enums import EntryType
 from app.models.fuel_entry import FuelEntry
 from app.models.odometer_event import OdometerEvent
 from app.models.vehicle import Vehicle
+from app.services.analytics import compute_yearly_summary
 from app.services.entry_mapping import (
     to_fuel_removed_entry,
     to_odometer_event_data,
     to_refuel_entry,
 )
 from app.services.importers.parsed_row import EXCEL_COLUMNS
-from app.services.mileage import SegmentResult, SegmentStatus, compute_segments
+from app.services.mileage import RefuelEntry, SegmentResult, compute_segments
 
 ENTRIES_SHEET_COLUMNS = [*EXCEL_COLUMNS, "raw_text"]
 COMPUTED_SHEET_COLUMNS = [
@@ -55,16 +55,6 @@ def _num(value: Decimal | None) -> float | str:
 
 def _date_str(value: dt.date | None) -> str:
     return value.strftime("%d/%m/%Y") if value else ""
-
-
-@dataclass
-class YearlyTotals:
-    year: int
-    km: Decimal = Decimal(0)
-    gross_litres: Decimal = Decimal(0)
-    net_litres: Decimal = Decimal(0)
-    gross_spend: Decimal = Decimal(0)
-    fills: int = 0
 
 
 def _entries_sheet(workbook: Workbook, entries: Sequence[FuelEntry]) -> None:
@@ -127,48 +117,21 @@ def _odometer_events_sheet(workbook: Workbook, events: Sequence[OdometerEvent]) 
         )
 
 
-def _yearly_totals(
-    segments: Sequence[SegmentResult], refuel_entries: Sequence[FuelEntry]
-) -> list[YearlyTotals]:
-    totals: dict[int, YearlyTotals] = {}
-
-    def _get(year: int) -> YearlyTotals:
-        if year not in totals:
-            totals[year] = YearlyTotals(year=year)
-        return totals[year]
-
-    for seg in segments:
-        if seg.status not in (SegmentStatus.VALID, SegmentStatus.ESTIMATED):
-            continue
-        year_totals = _get(seg.end_date.year)
-        year_totals.km += seg.distance_km
-        year_totals.net_litres += seg.net_litres
-        year_totals.gross_litres += seg.litres_added
-        year_totals.gross_spend += seg.cost_rs + seg.removed_fuel_cost_rs
-
-    for entry in refuel_entries:
-        _get(entry.date.year).fills += 1
-
-    return sorted(totals.values(), key=lambda t: t.year)
-
-
 def _summary_sheet(
-    workbook: Workbook, segments: Sequence[SegmentResult], refuel_entries: Sequence[FuelEntry]
+    workbook: Workbook, segments: Sequence[SegmentResult], refuel_entries: Sequence[RefuelEntry]
 ) -> None:
     sheet = workbook.create_sheet("Summary")
     sheet.append(SUMMARY_SHEET_COLUMNS)
-    for yearly in _yearly_totals(segments, refuel_entries):
-        avg_km_per_l = yearly.km / yearly.net_litres if yearly.net_litres > 0 else None
-        avg_rs_per_l = yearly.gross_spend / yearly.gross_litres if yearly.gross_litres > 0 else None
+    for yearly in compute_yearly_summary(segments, refuel_entries):
         sheet.append(
             [
                 yearly.year,
                 _num(yearly.km),
-                _num(yearly.gross_litres),
-                _num(yearly.gross_spend),
-                _num(avg_km_per_l),
-                _num(avg_rs_per_l),
-                yearly.fills,
+                _num(yearly.litres),
+                _num(yearly.spend_rs),
+                _num(yearly.avg_km_per_l),
+                _num(yearly.avg_rs_per_l),
+                yearly.fill_count,
             ]
         )
 
@@ -184,8 +147,9 @@ def build_export_workbook(
     removed_entries = [e for e in all_entries if e.entry_type == EntryType.FUEL_REMOVED]
     odometer_event_data = [to_odometer_event_data(e) for e in odometer_events]
 
+    refuel_entry_data = [to_refuel_entry(e) for e in refuel_entries]
     all_segments = compute_segments(
-        [to_refuel_entry(e) for e in refuel_entries],
+        refuel_entry_data,
         [to_fuel_removed_entry(e) for e in removed_entries],
         odometer_event_data,
         vehicle.tank_capacity_l,
@@ -200,7 +164,7 @@ def build_export_workbook(
 
     filtered_entries = [e for e in all_entries if _in_range(e.date)]
     filtered_segments = [s for s in all_segments if _in_range(s.end_date)]
-    filtered_refuels_for_summary = [e for e in refuel_entries if _in_range(e.date)]
+    filtered_refuels_for_summary = [e for e in refuel_entry_data if _in_range(e.date)]
 
     workbook = Workbook()
     _entries_sheet(workbook, filtered_entries)

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
 from app.api.entries import router as entries_router
 from app.api.export import router as export_router
@@ -57,3 +58,6 @@ app.include_router(
 )
 app.include_router(imports_router, prefix="/api/vehicles/{vehicle_id}/import", tags=["import"])
 app.include_router(export_router, prefix="/api/vehicles/{vehicle_id}", tags=["export"])
+app.include_router(
+    analytics_router, prefix="/api/vehicles/{vehicle_id}/analytics", tags=["analytics"]
+)

@@ -44,6 +44,8 @@ class RefuelEntry:
     fill_type: FillType
     odometer_status: OdometerStatus = OdometerStatus.OK
     distance_override_km: Decimal | None = None
+    location: str | None = None
+    station_name: str | None = None
 
 
 @dataclass(frozen=True)

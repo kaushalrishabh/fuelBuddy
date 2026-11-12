@@ -18,6 +18,8 @@ def to_refuel_entry(entry: FuelEntry) -> RefuelEntry:
         fill_type=entry.fill_type,
         odometer_status=entry.odometer_status,
         distance_override_km=entry.distance_override_km,
+        location=entry.location,
+        station_name=entry.station_name,
     )
 
 
